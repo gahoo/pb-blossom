@@ -1,0 +1,33 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gahoo/pb-blossom.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/gahoo/pb-blossom/issues"
+  },
+  "homepage": "https://github.com/gahoo/pb-blossom#readme",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260507.1",
+    "esbuild": "^0.28.0",
+    "nostr-tools": "^2.23.3",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.89.0"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.2.0"
+  }
+}
