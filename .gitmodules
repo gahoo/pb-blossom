@@ -1,0 +1,3 @@
+[submodule "pastebin-worker"]
+	path = pastebin-worker
+	url = https://github.com/SharzyL/pastebin-worker.git
