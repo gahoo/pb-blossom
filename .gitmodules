@@ -1,3 +1,6 @@
 [submodule "pastebin-worker"]
 	path = pastebin-worker
 	url = https://github.com/SharzyL/pastebin-worker.git
+[submodule "blossom"]
+	path = blossom
+	url = https://github.com/hzrd149/blossom.git
