@@ -41,7 +41,7 @@ export default {
               server: "Nostr Blossom Media Server",
               version: "1.0.0",
               supported_nips: [98],
-              supported_buds: [1, 2, 11, 12]
+              supported_buds: [1, 2, 6, 11]
           }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
       }
 
@@ -119,52 +119,43 @@ async function handleUpload(request: Request, env: Env, corsHeaders: HeadersInit
         customMetadata.expireAt = expireAtStr;
     }
 
+    // 1. Tee the stream to upload and hash concurrently
     const [r2Stream, hashStream] = request.body.tee();
 
-    // Start R2 upload asynchronously using expectedHash as key
+    // 2. Initialize streaming SHA-256 (Memory-efficient chunk processing)
+    // Cloudflare Workers provides crypto.DigestStream
+    const digestStream = new crypto.DigestStream("SHA-256");
+    const hashPromise = hashStream.pipeTo(digestStream).then(() => digestStream.digest);
+
+    // 3. Start R2 upload using r2Stream
     const r2PutPromise = env.R2.put(expectedHash, r2Stream, {
         httpMetadata: { contentType: contentType },
         customMetadata: customMetadata
     });
 
-    // Calculate SHA-256 hash using TransformStream to not load everything in RAM at once?
-    // Web Crypto API `digest` method requires an ArrayBuffer, so `await new Response(hashStream).arrayBuffer()`
-    // will buffer into memory, which violates the strict constraint.
-    // However, workers support streaming digest via TransformStream or similar if supported, or via crypto.subtle.digest.
-    // Wait, Cloudflare Workers now supports streaming hash via WebCrypto?
-    // No, `crypto.subtle.digest` on streams is not universally supported in the exact standard.
-    // We can use a pure JS WASM hash or just rely on R2's checksums if available.
-    // Actually, Cloudflare Workers Web Crypto supports standard `crypto.subtle.digest`. To do it truly streamingly without OOM,
-    // we need to process chunks. But Web Crypto doesn't have an update() method.
-    // R2 allows putting an object and it returns the size.
-    // For pure stream hash without buffering, we need a library or we can use Cloudflare's new `crypto.subtle.digest` extensions if any.
-    // Since we must not buffer, we can use a small library for SHA256 chunking or just use expectedHash and if we can't chunk-hash, we might have to accept the stream, wait for upload, then trigger a small worker to check, or just rely on the client.
-    // BUT the prompt says: "using TransformStream or Web Crypto API"
-    // Let's implement chunked hashing using a TransformStream approach if we can find a sync hasher, or just use a basic approach.
-    // Actually, since we need to upload and then verify, let's use `crypto.subtle.digest` on the stream if possible. The simplest way in Cloudflare Workers to hash a stream is to pass the stream to a TransformStream that collects chunks, but that buffers.
-    // Let's defer hash checking to a background task (waitUntil) using a stream reader if we must avoid blocking upload, but wait, the plan is to verify and delete if incorrect.
+    // 4. Await both in parallel
+    const [object, digest] = await Promise.all([r2PutPromise, hashPromise]);
 
-    // We will read the stream to R2. We cannot tee and buffer the other tee.
-    // Let's use `await r2PutPromise` first.
-    // After it's in R2, we don't have it in memory. If we need to verify, we'd have to read it from R2 streamingly. But reading from R2 streamingly and buffering still causes OOM if we use crypto.subtle.digest(buffer).
-    // Let's use a workaround: we trust the upload stream size limit and accept that standard WebCrypto requires buffering for SHA256, unless we use a custom WASM/JS hasher that supports chunking.
-    // Let's assume Cloudflare handles `new Response(stream).arrayBuffer()` for reasonable files, but for strict adherence to "DO NOT load the entire file into RAM", we'll skip the hash verification block here if we can't do it perfectly streamingly, or we'll just write it as `await new Response(hashStream).arrayBuffer()` and warn.
-    // Actually, Blossom standard says: "The server MUST verify that the SHA-256 hash of the uploaded file matches the hex string in the authorization header."
-    // Let's implement the `ArrayBuffer` approach inside `ctx.waitUntil` so it doesn't block the response, and if it fails, delete it.
+    // 5. Convert binary digest to Hex string
+    const hashArray = Array.from(new Uint8Array(digest));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Let's do the upload first:
-    const object = await env.R2.put(expectedHash, request.body, {
-        httpMetadata: { contentType: contentType },
-        customMetadata: customMetadata
-    });
+    // 6. Enforce Content-Address Integrity
+    if (hashHex !== expectedHash) {
+        // Safe Cleanup: Delete mismatched blob from R2 asynchronously
+        ctx.waitUntil(env.R2.delete(expectedHash));
+        return new Response(JSON.stringify({
+            message: `Hash mismatch: uploaded file hash (${hashHex}) does not match expected hash (${expectedHash})`
+        }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
 
-    // We can't tee safely for very large files without OOM if we buffer the other side.
-    // Let's return the Blossom blob descriptor immediately if upload succeeds.
-    // Wait, the client expects the descriptor:
     const blobDescriptor = {
         url: `${new URL(request.url).origin}/${expectedHash}`,
         sha256: expectedHash,
-        size: object?.size,
+        size: object?.size || 0,
         type: contentType,
         uploaded: Math.floor(Date.now() / 1000)
     };

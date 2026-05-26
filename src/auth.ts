@@ -30,14 +30,25 @@ export async function verifyAuth(request: Request, env: Env): Promise<{ authoriz
 
     let tTag = null;
     let xTag = null;
-    let actionTag = null;
+    let serverTag = null;
 
     for (const tag of event.tags) {
         if (tag[0] === 't') {
             tTag = tag[1];
         } else if (tag[0] === 'x') {
             xTag = tag[1];
+        } else if (tag[0] === 'server') {
+            serverTag = tag[1];
         }
+    }
+
+    const requestUrl = new URL(request.url);
+    if (serverTag && serverTag !== requestUrl.hostname) {
+        return {
+            authorized: false,
+            error: `Token target mismatch: token issued for '${serverTag}', but target is '${requestUrl.hostname}'`,
+            status: 403
+        };
     }
 
     if (request.method === 'PUT' && tTag !== 'upload') {
