@@ -87,7 +87,7 @@ REQUIRE_WHITELIST = "true"
 If `REQUIRE_WHITELIST = "true"`, users must be whitelisted to upload or delete files. You can add a Nostr pubkey (hex format) to the KV namespace using Wrangler:
 
 ```bash
-wrangler kv:key put --binding=WHITELIST_KV "<user-hex-pubkey>" "true"
+wrangler kv key put --namespace-id=WHITELIST_KV "<user-hex-pubkey>" "true"
 ```
 
 ### 5. Deploy to Cloudflare
@@ -96,6 +96,8 @@ Once configured, deploy the worker to Cloudflare:
 
 ```bash
 npm run deploy
+# or manually via wrangler
+wrangler deploy
 ```
 
 Wrangler will output your assigned worker URL (e.g., `https://blossom-server.<your-subdomain>.workers.dev`). You can now use this URL as your Blossom server in compatible Nostr clients!
