@@ -102,6 +102,44 @@ wrangler deploy
 
 Wrangler will output your assigned worker URL (e.g., `https://blossom-server.<your-subdomain>.workers.dev`). You can now use this URL as your Blossom server in compatible Nostr clients!
 
+
+## API Usage Examples
+
+The following examples show how to interact with the Blossom server using `curl`.
+For endpoints that require authentication (`/upload`, `DELETE`), you must provide a valid Nostr authorization event (Kind `24242`) base64-encoded in the `Authorization` header.
+
+### 1. Upload a Blob
+Upload a file. This requires an authorization token where the `t` tag is set to `upload` and an `x` tag containing the expected SHA-256 hash of the file.
+
+```bash
+curl -X PUT https://blossom-server.<your-subdomain>.workers.dev/upload \
+  -H "Authorization: Nostr <base64-encoded-kind-24242-event>" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary "@my-image.jpg"
+```
+
+### 2. Retrieve a Blob
+Retrieve a file by its SHA-256 hash. This endpoint is public.
+
+```bash
+curl -O https://blossom-server.<your-subdomain>.workers.dev/<sha256-hash>
+```
+
+### 3. List User's Blobs
+List all blobs uploaded by a specific Nostr pubkey. This endpoint is public.
+
+```bash
+curl https://blossom-server.<your-subdomain>.workers.dev/list/<user-hex-pubkey>
+```
+
+### 4. Delete a Blob
+Delete a file by its SHA-256 hash. This requires an authorization token where the `t` tag is set to `delete`. You can only delete blobs that you own.
+
+```bash
+curl -X DELETE https://blossom-server.<your-subdomain>.workers.dev/<sha256-hash> \
+  -H "Authorization: Nostr <base64-encoded-kind-24242-event>"
+```
+
 ## Development
 
 To run a local development server:
