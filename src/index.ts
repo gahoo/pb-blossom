@@ -5,7 +5,7 @@ export interface Env {
   WHITELIST_KV: KVNamespace;
   R2: R2Bucket;
   REQUIRE_WHITELIST: string;
-  DEFAULT_EXPIRE_DAYS?: string;
+  DEFAULT_EXPIRE_SECONDS?: string;
 }
 
 export default {
@@ -27,9 +27,9 @@ export default {
           'Access-Control-Allow-Methods': 'GET, PUT, DELETE, HEAD, OPTIONS',
           // All custom request headers that clients may send must be listed here.
           // X-SHA-256 is used by BUD-02/06 for content-addressing.
-          // X-Expire-Days is our custom TTL extension.
+          // X-Expire-Seconds is our custom TTL extension.
           // X-Content-Length and X-Content-Type are used by BUD-06 preflight.
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-SHA-256, X-Expire-Days, X-Content-Length, X-Content-Type',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-SHA-256, X-Expire-Seconds, X-Content-Length, X-Content-Type',
           // Cache preflight result for 24 hours (BUD-01 recommendation)
           'Access-Control-Max-Age': '86400',
         },
@@ -107,18 +107,19 @@ async function handleUpload(request: Request, env: Env, corsHeaders: HeadersInit
     const expectedHash = authResult.expectedHash;
     const pubkey = authResult.pubkey!;
     const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
-    const expireDaysHeader = request.headers.get('X-Expire-Days');
+    const expireSecondsHeader = request.headers.get('X-Expire-Seconds');
 
-    let expireDaysToUse = expireDaysHeader;
-    if (!expireDaysToUse && env.DEFAULT_EXPIRE_DAYS) {
-        expireDaysToUse = env.DEFAULT_EXPIRE_DAYS;
+    let expireSecondsToUse = expireSecondsHeader;
+    if (!expireSecondsToUse && env.DEFAULT_EXPIRE_SECONDS) {
+        expireSecondsToUse = env.DEFAULT_EXPIRE_SECONDS;
     }
 
     let expireAtStr = '';
-    if (expireDaysToUse) {
-        const days = parseInt(expireDaysToUse, 10);
-        if (!isNaN(days) && days > 0) {
-            const expireAtUnix = Math.floor(Date.now() / 1000) + (days * 24 * 60 * 60);
+    if (expireSecondsToUse) {
+        const seconds = parseInt(expireSecondsToUse, 10);
+        if (!isNaN(seconds) && seconds > 0) {
+            const finalSeconds = Math.max(seconds, 60);
+            const expireAtUnix = Math.floor(Date.now() / 1000) + finalSeconds;
             expireAtStr = expireAtUnix.toString();
         }
     }

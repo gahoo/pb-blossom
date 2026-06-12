@@ -20,4 +20,4 @@ bucket_name = "mock-bucket-blossom"
 
 [vars]
 REQUIRE_WHITELIST = "true"
-DEFAULT_EXPIRE_DAYS = "30"
+DEFAULT_EXPIRE_SECONDS = "2592000"
