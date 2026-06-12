@@ -106,7 +106,34 @@ Wrangler will output your assigned worker URL (e.g., `https://blossom-server.<yo
 ## API Usage Examples
 
 The following examples show how to interact with the Blossom server using `curl`.
-For endpoints that require authentication (`/upload`, `DELETE`), you must provide a valid Nostr authorization event (Kind `24242`) base64-encoded in the `Authorization` header.
+
+### Understanding Nostr Authorization (`Kind 24242`)
+
+When uploading or deleting a file, Blossom requires the user's Nostr identity (their public key) to be verified via a cryptographic signature. This is done by passing a Base64-encoded Nostr Event in the `Authorization` header.
+
+**Why the file hash is required for uploads:**
+To ensure data integrity, the SHA-256 hash of the file you are uploading **must** be embedded inside this signed event using an `x` tag. The server will reject the upload if the actual file's hash does not match the hash you signed.
+
+A valid `Kind 24242` JSON event for an upload looks like this before Base64 encoding:
+
+```json
+{
+  "kind": 24242,
+  "created_at": 1716700000,
+  "pubkey": "<your-hex-pubkey>", // This is the identity checked against the whitelist
+  "content": "Upload Authorization",
+  "tags": [
+    ["t", "upload"], // The action being authorized
+    ["x", "<sha256-hash-of-the-file>"], // MUST match the file being uploaded
+    ["server", "blossom-server.<your-subdomain>.workers.dev"] // Optional, prevents replay attacks
+  ],
+  "id": "<event-id>",
+  "sig": "<your-private-key-signature>"
+}
+```
+
+Once this JSON is created and signed by your Nostr client, it is Base64 encoded and passed to the server: `Authorization: Nostr <base64-string>`.
+
 
 ### 1. Upload a Blob
 Upload a file. This requires an authorization token where the `t` tag is set to `upload` and an `x` tag containing the expected SHA-256 hash of the file.
