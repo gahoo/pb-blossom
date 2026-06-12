@@ -5,6 +5,7 @@ export interface Env {
   WHITELIST_KV: KVNamespace;
   R2: R2Bucket;
   REQUIRE_WHITELIST: string;
+  DEFAULT_EXPIRE_DAYS?: string;
 }
 
 export default {
@@ -108,9 +109,14 @@ async function handleUpload(request: Request, env: Env, corsHeaders: HeadersInit
     const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
     const expireDaysHeader = request.headers.get('X-Expire-Days');
 
+    let expireDaysToUse = expireDaysHeader;
+    if (!expireDaysToUse && env.DEFAULT_EXPIRE_DAYS) {
+        expireDaysToUse = env.DEFAULT_EXPIRE_DAYS;
+    }
+
     let expireAtStr = '';
-    if (expireDaysHeader) {
-        const days = parseInt(expireDaysHeader, 10);
+    if (expireDaysToUse) {
+        const days = parseInt(expireDaysToUse, 10);
         if (!isNaN(days) && days > 0) {
             const expireAtUnix = Math.floor(Date.now() / 1000) + (days * 24 * 60 * 60);
             expireAtStr = expireAtUnix.toString();
