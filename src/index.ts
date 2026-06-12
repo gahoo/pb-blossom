@@ -24,14 +24,21 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, PUT, DELETE, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-expire-days',
+          // All custom request headers that clients may send must be listed here.
+          // X-SHA-256 is used by BUD-02/06 for content-addressing.
+          // X-Expire-Days is our custom TTL extension.
+          // X-Content-Length and X-Content-Type are used by BUD-06 preflight.
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-SHA-256, X-Expire-Days, X-Content-Length, X-Content-Type',
+          // Cache preflight result for 24 hours (BUD-01 recommendation)
+          'Access-Control-Max-Age': '86400',
         },
       });
     }
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Expose-Headers': 'Link, Blossom-Version',
+      // Expose X-Reason so browsers can read error messages cross-origin (BUD-01)
+      'Access-Control-Expose-Headers': 'X-Reason, Link, Blossom-Version',
       'Blossom-Version': '2.0.0',
     };
 
@@ -119,22 +126,50 @@ async function handleUpload(request: Request, env: Env, corsHeaders: HeadersInit
         customMetadata.expireAt = expireAtStr;
     }
 
-    // 1. Tee the stream to upload and hash concurrently
+    // 1. Idempotency check: if this exact blob is already stored, skip the upload.
+    // Blossom is content-addressed — same SHA-256 means identical bytes, so there
+    // is never a need to re-write the data. We only skip if the stored object is
+    // not expired; expired objects must be overwritten.
+    const existing = await env.R2.head(expectedHash);
+    if (existing) {
+        const isExpired = existing.customMetadata?.expireAt
+            ? parseInt(existing.customMetadata.expireAt, 10) < Math.floor(Date.now() / 1000)
+            : false;
+
+        if (!isExpired) {
+            // Return a BlobDescriptor for the already-stored blob without re-uploading.
+            const blobDescriptor = {
+                url: `${new URL(request.url).origin}/${expectedHash}`,
+                sha256: expectedHash,
+                size: existing.size,
+                type: existing.httpMetadata?.contentType || contentType,
+                uploaded: Math.floor(existing.uploaded.getTime() / 1000),
+            };
+            return new Response(JSON.stringify(blobDescriptor), {
+                status: 200,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+        // Expired blob: fall through to overwrite it below.
+    }
+
+    // 2. Tee the stream to upload and hash concurrently
     const [r2Stream, hashStream] = request.body.tee();
 
-    // 2. Initialize streaming SHA-256 (Memory-efficient chunk processing)
+    // 3. Initialize streaming SHA-256 (Memory-efficient chunk processing)
     // Cloudflare Workers provides crypto.DigestStream
     const digestStream = new crypto.DigestStream("SHA-256");
     const hashPromise = hashStream.pipeTo(digestStream).then(() => digestStream.digest);
 
-    // 3. Start R2 upload using r2Stream
+    // 4. Start R2 upload using r2Stream
     const r2PutPromise = env.R2.put(expectedHash, r2Stream, {
         httpMetadata: { contentType: contentType },
         customMetadata: customMetadata
     });
 
-    // 4. Await both in parallel
+    // 5. Await both in parallel
     const [object, digest] = await Promise.all([r2PutPromise, hashPromise]);
+
 
     // 5. Convert binary digest to Hex string
     const hashArray = Array.from(new Uint8Array(digest));
